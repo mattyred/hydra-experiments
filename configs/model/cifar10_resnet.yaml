@@ -1,0 +1,23 @@
+_target_: src.models.resnet_module.ResnetLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 10
+
+net:
+  _target_: src.models.components.resnet.ResNet18
+  in_channels: 3
+  num_classes: 10
+  dropout_rate: 0
+
+# compile model for faster training with pytorch 2.0
+compile: false
