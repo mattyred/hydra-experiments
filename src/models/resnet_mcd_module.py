@@ -1,11 +1,20 @@
-import torch
 from typing import Any, Dict, Tuple
-from lightning import LightningModule
-from torchmetrics.classification.accuracy import Accuracy
-from torchmetrics import MaxMetric, MeanMetric
-import numpy as np
 
-class ResnetLitModule(LightningModule):
+import numpy as np
+import torch
+from lightning import LightningModule
+from torchmetrics import MaxMetric, MeanMetric
+from torchmetrics.classification.accuracy import Accuracy
+
+from src.models.components.resnet import ResNet18, ResNet34
+from src.utils.uncertainty import (
+    AleatoricUncertainty,
+    EpistemicUncertainty,
+    TotalUncertainty,
+)
+
+
+class ResnetMCDLitModule(LightningModule):
     """Example of a `LightningModule` for CIFAR10 classification.
 
     A `LightningModule` implements 8 key methods:
@@ -40,22 +49,45 @@ class ResnetLitModule(LightningModule):
 
     def __init__(
         self,
-        net: torch.nn.Module,
+        net_config: Dict,
+        mcd_samples_train: int,
+        mcd_samples_val: int,
+        mcd_samples_test: int,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
     ) -> None:
-        
         super().__init__()
         self.save_hyperparameters(logger=False)
-        self.net = net
+        self.dropout_rate = net_config["dropout_rate"]
+        if net_config["arch"] == "resnet18":
+            self.net = ResNet18(
+                in_channels=net_config["in_channels"],
+                num_classes=net_config["num_classes"],
+                dropout_rate=self.dropout_rate,
+            )
+        elif net_config["arch"] == "resnet34":
+            self.net = ResNet34(
+                in_channels=net_config["in_channels"],
+                num_classes=net_config["num_classes"],
+                dropout_rate=self.dropout_rate,
+            )
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
 
         # metric objects for calculating and averaging accuracy across batches
-        self.train_acc = Accuracy(task="multiclass", num_classes=10)
-        self.val_acc = Accuracy(task="multiclass", num_classes=10)
-        self.test_acc = Accuracy(task="multiclass", num_classes=10)
+        self.train_acc = Accuracy(task="multiclass", num_classes=net_config["num_classes"])
+        self.val_acc = Accuracy(task="multiclass", num_classes=net_config["num_classes"])
+        self.test_acc = Accuracy(task="multiclass", num_classes=net_config["num_classes"])
+        self.train_tu = TotalUncertainty()
+        self.train_au = AleatoricUncertainty()
+        self.train_eu = EpistemicUncertainty(self.train_tu, self.train_au)
+        self.val_tu = TotalUncertainty()
+        self.val_au = AleatoricUncertainty()
+        self.val_eu = EpistemicUncertainty(self.val_tu, self.val_au)
+        self.test_tu = TotalUncertainty()
+        self.test_au = AleatoricUncertainty()
+        self.test_eu = EpistemicUncertainty(self.test_tu, self.test_au)
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -82,44 +114,62 @@ class ResnetLitModule(LightningModule):
         self.val_acc_best.reset()
 
     def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor]
+        self, batch: Tuple[torch.Tensor, torch.Tensor], mcd_samples: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Perform a single model step on a batch of data.
+        """Perform a single model step with Monte Carlo Dropout on a batch of data.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.
-
+        :param mcd_samples: The number of stochastic MC samples (forward passed)
         :return: A tuple containing (in order):
             - A tensor of losses.
-            - A tensor of predictions.
-            - A tensor of target labels.
+            - A tensor of stochastic predictions [TxBxC].
+            - A tensor of predictions [BxC].
+            - A tensor of target labels [B].
         """
         x, y = batch
-        logits = self.forward(x)
-        loss = self.criterion(logits, y)
-        preds = torch.argmax(logits, dim=1)
-        return loss, preds, y
-    
+        mcd_preds = []
+        self.net.train()  # ensure dropout is active
+        for _ in range(mcd_samples):
+            logits = self.forward(x)
+            mcd_preds.append(logits)
+
+        mcd_preds = torch.stack(mcd_preds)  # [T, B, C] to compute uncertainties
+        mean_preds = mcd_preds.mean(dim=0)  # [B, C]
+
+        loss = self.criterion(mean_preds, y)
+        preds = torch.argmax(mean_preds, dim=1)  # to compute accuracy
+
+        return loss, mcd_preds, preds, y
+
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
-        """Perform a single training step on a batch of data from the training set.
+        """Perform a single training step with Monte Carlo Dropout on a batch of data from the training set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
             labels.
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, mcd_preds, preds, targets = self.model_step(
+            batch, mcd_samples=self.hparams.mcd_samples_train
+        )
 
         # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
+        self.train_tu(mcd_preds)
+        self.train_au(mcd_preds)
+        self.train_eu(mcd_preds)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/tu", self.train_tu, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/au", self.train_au, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/eu", self.train_eu, on_step=False, on_epoch=True, prog_bar=True)
 
         # return loss or backpropagation will fail
         return loss
-    
+
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
         pass
@@ -131,13 +181,21 @@ class ResnetLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, mcd_preds, preds, targets = self.model_step(
+            batch, mcd_samples=self.hparams.mcd_samples_val
+        )
 
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
+        self.val_tu(mcd_preds)
+        self.val_au(mcd_preds)
+        self.val_eu(mcd_preds)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/tu", self.val_tu, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/au", self.val_au, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/eu", self.val_eu, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
         "Lightning hook that is called when a validation epoch ends."
@@ -154,13 +212,21 @@ class ResnetLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, preds, targets = self.model_step(batch)
+        loss, mcd_preds, preds, targets = self.model_step(
+            batch, mcd_samples=self.hparams.mcd_samples_test
+        )
 
         # update and log metrics
         self.test_loss(loss)
         self.test_acc(preds, targets)
+        self.test_tu(mcd_preds)
+        self.test_au(mcd_preds)
+        self.test_eu(mcd_preds)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/tu", self.test_tu, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/au", self.test_au, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/eu", self.test_eu, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
@@ -200,6 +266,7 @@ class ResnetLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-    
+
+
 if __name__ == "__main__":
-    _ = ResnetLitModule(None, None, None, None)
+    _ = ResnetMCDLitModule(None, None, None, None)
