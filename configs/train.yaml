@@ -6,6 +6,7 @@ defaults:
   - _self_
   - data: cifar10
   - model: cifar10_resnet
+  - model/scheduler: reduce_on_plateau
   - callbacks: default
   - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
   - trainer: default

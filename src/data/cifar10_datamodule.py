@@ -1,10 +1,45 @@
+from collections import defaultdict
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import torch
 from lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms
+
+
+def get_training_subset(
+    train_dataset: torch.utils.data.Dataset, train_subset: float, num_classes: int, seed: int
+) -> torch.utils.data.Subset:
+    subset_percentage = train_subset / 100.0
+    targets = np.array(train_dataset.targets)
+    class_indices = defaultdict(
+        list
+    )  # for each label in CIFAR-10 the indexes of the training samples with that label
+
+    # Collect indices per class
+    for idx, label in enumerate(targets):
+        class_indices[label].append(idx)
+
+    # Determine how many samples to take per class
+    n_total = len(train_dataset)
+    n_subset = int(n_total * subset_percentage)
+    samples_per_class = n_subset // num_classes
+
+    # Uniformly sample from each class
+    subset_indices = []
+    rng = np.random.default_rng(seed=seed)
+    for c in range(num_classes):
+        cls_indices = class_indices[c]
+        if len(cls_indices) < samples_per_class:
+            raise ValueError(f"Not enough samples in class {c} to satisfy uniform sampling.")
+        subset_indices.extend(rng.choice(cls_indices, samples_per_class, replace=False))
+
+    # Shuffle final subset indices to avoid class ordering
+    subset_indices = rng.permutation(subset_indices)
+
+    return Subset(train_dataset, subset_indices)
 
 
 class CIFAR10DataModule(LightningDataModule):
@@ -48,8 +83,9 @@ class CIFAR10DataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "data/",
-        train_val_test_split: Tuple[int, int, int] = (55_000, 5_000, 10_000),
         batch_size: int = 64,
+        train_subset: float = 100,
+        train_subset_seed: int = 42,
         num_workers: int = 0,
         pin_memory: bool = False,
     ) -> None:
@@ -69,7 +105,10 @@ class CIFAR10DataModule(LightningDataModule):
 
         # data transformations
         self.transforms = transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))]
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+            ]
         )
 
         self.data_train: Optional[Dataset] = None
@@ -119,12 +158,18 @@ class CIFAR10DataModule(LightningDataModule):
         if not self.data_train and not self.data_val and not self.data_test:
             trainset = CIFAR10(self.hparams.data_dir, train=True, transform=self.transforms)
             testset = CIFAR10(self.hparams.data_dir, train=False, transform=self.transforms)
-            dataset = ConcatDataset(datasets=[trainset, testset])
-            self.data_train, self.data_val, self.data_test = random_split(
-                dataset=dataset,
-                lengths=self.hparams.train_val_test_split,
-                generator=torch.Generator().manual_seed(42),
-            )
+
+            # Retain only train_subset % of the trainset (if train_subset != 100%)
+            if self.hparams.train_subset != 100:
+                self.data_train = get_training_subset(
+                    trainset,
+                    self.hparams.train_subset,
+                    self.num_classes,
+                    self.hparams.train_subset_seed,
+                )
+            else:
+                self.data_train = trainset
+            self.data_val = self.data_test = testset
 
     def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader.

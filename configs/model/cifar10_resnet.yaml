@@ -1,4 +1,16 @@
-_target_: src.models.resnet_module.ResnetLitModule
+_target_: src.models.resnet_mcd_module.ResnetMCDLitModule
+
+net_config:
+  arch: resnet18
+  in_channels: 3
+  num_classes: 10
+  dropout_rate: 0
+
+mcd_samples_train: 10
+
+mcd_samples_val: 50
+
+mcd_samples_test: 50
 
 optimizer:
   _target_: torch.optim.Adam
@@ -6,18 +18,9 @@ optimizer:
   lr: 0.001
   weight_decay: 0.0
 
-scheduler:
-  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
-  _partial_: true
-  mode: min
-  factor: 0.1
-  patience: 10
+scheduler: null
 
-net:
-  _target_: src.models.components.resnet.ResNet18
-  in_channels: 3
-  num_classes: 10
-  dropout_rate: 0
-
-# compile model for faster training with pytorch 2.0
 compile: false
+# NOTE
+# Every 1st indent parameter MUST be a parameter of the class _target_ on top
+# If we need to pass an object as a parameter then we can instantiate it like `net` here
