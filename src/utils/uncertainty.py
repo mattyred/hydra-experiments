@@ -9,15 +9,16 @@ class TotalUncertainty(Metric):
         self.add_state("entropy_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_batches", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def update(self, mcd_preds: Tensor) -> None:
+    def update(self, mcd_preds: Tensor, probs: bool) -> None:
         """
         :param mcd_preds: Tensor of shape [T, B, C], probabilities from MC Dropout
         """
         if mcd_preds.ndim != 3:
             raise ValueError("Expected mc_preds to have shape [T, B, C]")
 
-        # Convert logits to softmax probabilities
-        mcd_preds = torch.softmax(mcd_preds, dim=-1)
+        if probs is False:
+            # Convert logits to softmax probabilities
+            mcd_preds = torch.softmax(mcd_preds, dim=-1)
 
         # Mean predictive distribution over MC samples
         mean_probs = mcd_preds.mean(dim=0)  # [B, C]
@@ -39,17 +40,18 @@ class AleatoricUncertainty(Metric):
         self.add_state("entropy_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_batches", default=torch.tensor(0), dist_reduce_fx="sum")
 
-    def update(self, mcd_preds: Tensor) -> None:
+    def update(self, mcd_preds: Tensor, probs: bool) -> None:
         """
         :param mcd_preds: Tensor of shape [T, B, C], probabilities from MC Dropout
         """
         if mcd_preds.ndim != 3:
             raise ValueError("Expected mc_preds to have shape [T, B, C]")
 
-        # Convert logits to softmax probabilities
-        probs = torch.softmax(mcd_preds, dim=-1)  # [T,B,C]
+        if probs is False:
+            # Convert logits to softmax probabilities
+            mcd_preds = torch.softmax(mcd_preds, dim=-1)  # [T,B,C]
 
-        entropies = -torch.sum(probs * torch.log(probs + 1e-10), dim=-1)  # [T,B]
+        entropies = -torch.sum(mcd_preds * torch.log(mcd_preds + 1e-10), dim=-1)  # [T,B]
         batch_entropy = torch.mean(entropies, axis=0).mean()  # scalar
 
         self.entropy_sum += batch_entropy
@@ -65,9 +67,9 @@ class EpistemicUncertainty(Metric):
         self.total_metric = total_metric
         self.aleatoric_metric = aleatoric_metric
 
-    def update(self, mcd_preds: Tensor) -> None:
-        self.total_metric.update(mcd_preds)
-        self.aleatoric_metric.update(mcd_preds)
+    def update(self, mcd_preds: Tensor, probs: bool) -> None:
+        self.total_metric.update(mcd_preds, probs=probs)
+        self.aleatoric_metric.update(mcd_preds, probs=probs)
 
     def compute(self) -> Tensor:
         total = self.total_metric.compute()

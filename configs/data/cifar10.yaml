@@ -1,7 +1,7 @@
 _target_: src.data.cifar10_datamodule.CIFAR10DataModule
 data_dir: ${paths.data_dir}
 batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
-train_subset: 5
+train_subset: 50_000
 train_subset_seed: 42
 num_workers: 2
 pin_memory: False

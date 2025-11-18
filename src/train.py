@@ -82,6 +82,11 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)
 
+    log.info("Computing dataset and model statistics...")
+    datamodule.setup(stage="fit")
+    num_train_samples = len(datamodule.train_dataloader().dataset)
+    log.info(f"Number of training samples: {num_train_samples:,}")
+
     if cfg.get("train"):
         log.info("Starting training!")
         trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
