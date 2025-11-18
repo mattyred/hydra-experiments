@@ -1,7 +1,9 @@
 from typing import Any, Dict, Tuple
 
+import ivon
 import numpy as np
 import torch
+import torch.nn.functional as F
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
@@ -14,7 +16,7 @@ from src.utils.uncertainty import (
 )
 
 
-class ResnetMCDLitModule(LightningModule):
+class ResnetIVONLitModule(LightningModule):
     """Example of a `LightningModule` for CIFAR10 classification.
 
     A `LightningModule` implements 8 key methods:
@@ -50,10 +52,9 @@ class ResnetMCDLitModule(LightningModule):
     def __init__(
         self,
         net_config: Dict,
-        mcd_samples_train: int,
-        mcd_samples_val: int,
-        mcd_samples_test: int,
-        optimizer: torch.optim.Optimizer,
+        train_samples: int,
+        test_samples: int,
+        lr: float,
         scheduler: torch.optim.lr_scheduler,
         compile: bool,
     ) -> None:
@@ -97,6 +98,8 @@ class ResnetMCDLitModule(LightningModule):
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
 
+        self.automatic_optimization = False
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
@@ -113,33 +116,42 @@ class ResnetMCDLitModule(LightningModule):
         self.val_acc.reset()
         self.val_acc_best.reset()
 
-    def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], mcd_samples: int
+    def model_test_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor]
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single model step with Monte Carlo Dropout on a batch of data.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.
-        :param mcd_samples: The number of stochastic MC samples (forward passed)
         :return: A tuple containing (in order):
             - A tensor of losses.
-            - A tensor of stochastic predictions [TxBxC].
+            - A tensor of sampled predictions [TxBxC].
             - A tensor of predictions [BxC].
             - A tensor of target labels [B].
         """
         x, y = batch
-        mcd_preds = []
-        self.net.train()  # ensure dropout is active
-        for _ in range(mcd_samples):
-            logits = self.forward(x)
-            mcd_preds.append(logits)
+        opt = self.optimizers()
 
-        mcd_preds = torch.stack(mcd_preds)  # [T, B, C] to compute uncertainties
-        mean_preds = mcd_preds.mean(dim=0)  # [B, C] to compute accuracy
+        # Predict at mean
+        if self.hparams.test_samples == 0:
+            logits = self.forward(x)  # [B,C]
+            loss = self.criterion(logits, y)
+            sampled_probs = F.softmax(logits, dim=1).unsqueeze(0)  # [1, B, C]
+        # (or) Predict with samples
+        else:
+            sampled_probs = []
+            for _ in range(self.hparams.test_samples):
+                with opt.sampled_params():
+                    sampled_logit = self.forward(x)
+                    sampled_probs.append(F.softmax(sampled_logit, dim=1))
+            sampled_probs = torch.stack(sampled_probs)  # [T, B, C]
+            mean_preds = torch.mean(sampled_probs, dim=0)  # [B, C]
+            loss = -torch.sum(
+                torch.log(mean_preds.clamp(min=1e-6)) * F.one_hot(y, 10), dim=1
+            ).mean()
 
-        loss = self.criterion(mean_preds, y)
-        preds = torch.argmax(mean_preds, dim=1)
+        preds = mean_preds.argmax(dim=1)  # [B, C] for accuracy
 
-        return loss, mcd_preds, preds, y
+        return loss, sampled_probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -151,16 +163,31 @@ class ResnetMCDLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
-            batch, mcd_samples=self.hparams.mcd_samples_train
-        )
+        # loss, sampled_probs, preds, targets = self.model_train_step(batch)
+        x, y = batch
+        opt = self.optimizers().optimizer
+        sampled_probs = []
+
+        for _ in range(self.hparams.train_samples):
+            with opt.sampled_params(train=True):
+                logits = self.forward(x)
+                loss = self.criterion(logits, y)
+                self.manual_backward(loss)
+                sampled_probs.append(F.softmax(logits, dim=1))
+
+        opt.step()
+        opt.zero_grad()
+        print(f"TRAIN LOSS {loss}")
+        sampled_probs = torch.stack(sampled_probs, dim=0)  # [T, B, C]
+        mean_preds = sampled_probs.mean(dim=0)  # [B, C]
+        preds = mean_preds.argmax(dim=1)  # [B, C]
 
         # update and log metrics
         self.train_loss(loss)
-        self.train_acc(preds, targets)
-        self.train_tu(mcd_preds, probs=False)
-        self.train_au(mcd_preds, probs=False)
-        self.train_eu(mcd_preds, probs=False)
+        self.train_acc(preds, y)
+        self.train_tu(sampled_probs, probs=True)
+        self.train_au(sampled_probs, probs=True)
+        self.train_eu(sampled_probs, probs=True)
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/tu", self.train_tu, on_step=False, on_epoch=True, prog_bar=True)
@@ -181,16 +208,14 @@ class ResnetMCDLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
-            batch, mcd_samples=self.hparams.mcd_samples_val
-        )
+        loss, sampled_probs, preds, targets = self.model_test_step(batch)
 
         # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
-        self.val_tu(mcd_preds, probs=False)
-        self.val_au(mcd_preds, probs=False)
-        self.val_eu(mcd_preds, probs=False)
+        self.val_tu(sampled_probs, probs=True)
+        self.val_au(sampled_probs, probs=True)
+        self.val_eu(sampled_probs, probs=True)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/tu", self.val_tu, on_step=False, on_epoch=True, prog_bar=True)
@@ -212,16 +237,14 @@ class ResnetMCDLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
-            batch, mcd_samples=self.hparams.mcd_samples_test
-        )
+        loss, sampled_probs, preds, targets = self.model_test_step(batch)
 
         # update and log metrics
         self.test_loss(loss)
         self.test_acc(preds, targets)
-        self.test_tu(mcd_preds, probs=False)
-        self.test_au(mcd_preds, probs=False)
-        self.test_eu(mcd_preds, probs=False)
+        self.test_tu(sampled_probs, probs=True)
+        self.test_au(sampled_probs, probs=True)
+        self.test_eu(sampled_probs, probs=True)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/tu", self.test_tu, on_step=False, on_epoch=True, prog_bar=True)
@@ -245,15 +268,18 @@ class ResnetMCDLitModule(LightningModule):
             self.net = torch.compile(self.net)
 
     def configure_optimizers(self) -> Dict[str, Any]:
-        """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        Examples:
-            https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#configure-optimizers
+        """Use IVON custom optimizer
 
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
-        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
+        optimizer = ivon.IVON(
+            self.trainer.model.parameters(),
+            lr=self.hparams.lr,
+            beta1=0.9,
+            hess_init=0.01,
+            ess=25_000,
+        )
+
         if self.hparams.scheduler is not None:
             scheduler = self.hparams.scheduler(optimizer=optimizer)
             return {
@@ -269,4 +295,4 @@ class ResnetMCDLitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = ResnetMCDLitModule(None, None, None, None)
+    _ = ResnetIVONLitModule(None, None, None, None)

@@ -1,8 +1,12 @@
 import warnings
+from collections import defaultdict
 from importlib.util import find_spec
 from typing import Any, Callable, Dict, Optional, Tuple
 
+import numpy as np
+import torch
 from omegaconf import DictConfig
+from torch.utils.data import Subset
 
 from src.utils import pylogger, rich_utils
 
@@ -117,3 +121,68 @@ def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) ->
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value
+
+
+def get_data_subset(
+    train_dataset: torch.utils.data.Dataset, train_subset: float, num_classes: int, seed: int
+) -> torch.utils.data.Subset:
+    """
+    Uniformly sample an absolute number of training points (n_subset)
+    across classes from train_dataset.
+    """
+    print(
+        f"Creating training subset of {train_subset} samples from dataset of size {len(train_dataset)}"
+    )
+    if train_subset > len(train_dataset):
+        raise ValueError(
+            f"Requested train_subset={train_subset}, but dataset only has {len(train_dataset)} samples."
+        )
+
+    targets = np.array(train_dataset.targets)
+    class_indices = defaultdict(list)  # for each label, the indices of samples with that label
+
+    # Collect indices per class
+    for idx, label in enumerate(targets):
+        class_indices[int(label)].append(idx)
+
+    # Determine how many samples to take per class
+    samples_per_class = train_subset // num_classes
+    remainder = train_subset % num_classes  # leftover samples after uniform split
+
+    if samples_per_class == 0:
+        raise ValueError(
+            f"train_subset={train_subset} is too small to allocate at least one sample per class "
+            f"for num_classes={num_classes}."
+        )
+
+    rng = np.random.default_rng(seed=seed)
+    subset_indices = []
+
+    # Uniform baseline: same number from each class
+    for c in range(num_classes):
+        cls_indices = class_indices[c]
+        if len(cls_indices) < samples_per_class:
+            raise ValueError(
+                f"Not enough samples in class {c} to satisfy uniform sampling "
+                f"({len(cls_indices)} available, {samples_per_class} requested)."
+            )
+        subset_indices.extend(rng.choice(cls_indices, samples_per_class, replace=False))
+
+    # Distribute any remainder samples, one extra at a time to random classes
+    if remainder > 0:
+        # choose which classes get one extra sample
+        extra_classes = rng.choice(np.arange(num_classes), size=remainder, replace=False)
+        for c in extra_classes:
+            cls_indices = class_indices[c]
+            # avoid picking an index already chosen
+            already_chosen = {idx for idx in subset_indices if targets[idx] == c}
+            available = [idx for idx in cls_indices if idx not in already_chosen]
+            if not available:
+                # If a class is exhausted, just skip; we end up with slightly < n_subset
+                continue
+            subset_indices.append(rng.choice(available, 1, replace=False)[0])
+
+    # Shuffle final subset indices to avoid class ordering
+    subset_indices = rng.permutation(subset_indices)
+
+    return Subset(train_dataset, subset_indices)

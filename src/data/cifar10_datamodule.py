@@ -8,38 +8,7 @@ from torch.utils.data import DataLoader, Dataset, Subset, random_split
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import transforms
 
-
-def get_training_subset(
-    train_dataset: torch.utils.data.Dataset, train_subset: float, num_classes: int, seed: int
-) -> torch.utils.data.Subset:
-    subset_percentage = train_subset / 100.0
-    targets = np.array(train_dataset.targets)
-    class_indices = defaultdict(
-        list
-    )  # for each label in CIFAR-10 the indexes of the training samples with that label
-
-    # Collect indices per class
-    for idx, label in enumerate(targets):
-        class_indices[label].append(idx)
-
-    # Determine how many samples to take per class
-    n_total = len(train_dataset)
-    n_subset = int(n_total * subset_percentage)
-    samples_per_class = n_subset // num_classes
-
-    # Uniformly sample from each class
-    subset_indices = []
-    rng = np.random.default_rng(seed=seed)
-    for c in range(num_classes):
-        cls_indices = class_indices[c]
-        if len(cls_indices) < samples_per_class:
-            raise ValueError(f"Not enough samples in class {c} to satisfy uniform sampling.")
-        subset_indices.extend(rng.choice(cls_indices, samples_per_class, replace=False))
-
-    # Shuffle final subset indices to avoid class ordering
-    subset_indices = rng.permutation(subset_indices)
-
-    return Subset(train_dataset, subset_indices)
+from src.utils.utils import get_data_subset
 
 
 class CIFAR10DataModule(LightningDataModule):
@@ -159,9 +128,9 @@ class CIFAR10DataModule(LightningDataModule):
             trainset = CIFAR10(self.hparams.data_dir, train=True, transform=self.transforms)
             testset = CIFAR10(self.hparams.data_dir, train=False, transform=self.transforms)
 
-            # Retain only train_subset % of the trainset (if train_subset != 100%)
-            if self.hparams.train_subset != 100:
-                self.data_train = get_training_subset(
+            # Retain only train_subset samples of the trainset
+            if self.hparams.train_subset < len(trainset):
+                self.data_train = get_data_subset(
                     trainset,
                     self.hparams.train_subset,
                     self.num_classes,
