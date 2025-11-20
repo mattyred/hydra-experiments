@@ -6,7 +6,13 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
-from src.models.components.resnet import ResNet18, ResNet34
+from src.models.components.resnet import (
+    ResNet18,
+    ResNet34,
+    ResNet50,
+    ResNet101,
+    ResNet152,
+)
 from src.utils.uncertainty import (
     AleatoricUncertainty,
     EpistemicUncertainty,
@@ -68,6 +74,24 @@ class ResnetMCDLitModule(LightningModule):
             )
         elif net_config["arch"] == "resnet34":
             self.net = ResNet34(
+                in_channels=net_config["in_channels"],
+                num_classes=net_config["num_classes"],
+                dropout_rate=self.dropout_rate,
+            )
+        elif net_config["arch"] == "resnet50":
+            self.net = ResNet50(
+                in_channels=net_config["in_channels"],
+                num_classes=net_config["num_classes"],
+                dropout_rate=self.dropout_rate,
+            )
+        elif net_config["arch"] == "resnet101":
+            self.net = ResNet101(
+                in_channels=net_config["in_channels"],
+                num_classes=net_config["num_classes"],
+                dropout_rate=self.dropout_rate,
+            )
+        elif net_config["arch"] == "resnet152":
+            self.net = ResNet152(
                 in_channels=net_config["in_channels"],
                 num_classes=net_config["num_classes"],
                 dropout_rate=self.dropout_rate,
