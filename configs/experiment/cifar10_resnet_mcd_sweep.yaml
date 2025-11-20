@@ -1,0 +1,13 @@
+# @package _global_
+
+defaults:
+  - cifar10_resnet_mcd
+  - override /hydra/launcher: submitit_slurm
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      model.net_config.arch: resnet18,resnet34,resnet50,resnet101,resnet152
+      model.net_config.dropout_rate: 0.1,0.25,0.5
+      data.train_subset: 12500,25000,37500,50000

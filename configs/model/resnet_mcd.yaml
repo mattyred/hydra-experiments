@@ -2,15 +2,7 @@ _target_: src.models.resnet_mcd_module.ResnetMCDLitModule
 
 net_config:
   arch: resnet18
-  in_channels: 3
-  num_classes: 10
   dropout_rate: 0
-
-mcd_samples_train: 10
-
-mcd_samples_val: 50
-
-mcd_samples_test: 50
 
 optimizer:
   _target_: torch.optim.Adam
