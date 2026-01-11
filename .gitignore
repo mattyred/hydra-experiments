@@ -153,4 +153,6 @@ configs/local/default.yaml
 # Aim logging
 .aim
 
-.dcgm/
+srun.sh
+jupyter.sh
+dcgm/

@@ -14,6 +14,7 @@ from src.models.components.resnet import (
     ResNet152,
 )
 from src.models.components.wideresnet import WideResNet
+from src.optim.sam import SAM
 from src.utils.uncertainty import (
     AleatoricUncertainty,
     EpistemicUncertainty,
@@ -21,7 +22,7 @@ from src.utils.uncertainty import (
 )
 
 
-class ResnetMCDLitModule(LightningModule):
+class ResnetSAMMCDLitModule(LightningModule):
     """Example of a `LightningModule` for CIFAR10 classification.
 
     A `LightningModule` implements 8 key methods:
@@ -66,6 +67,7 @@ class ResnetMCDLitModule(LightningModule):
     ) -> None:
         super().__init__()
         self.save_hyperparameters(logger=False)
+        self.automatic_optimization = False  # for SAM
         self.dropout_rate = net_config["dropout_rate"]
         self.in_channels = net_config["in_channels"]
         self.num_classes = net_config["num_classes"]
@@ -178,35 +180,64 @@ class ResnetMCDLitModule(LightningModule):
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
-        """Perform a single training step with Monte Carlo Dropout on a batch of data from the training set.
+        opt = self.optimizers()  # could be SAM or a normal optimizer
 
-        :param batch: A batch of data (a tuple) containing the input tensor of images and target
-            labels.
-        :param batch_idx: The index of the current batch.
-        :return: A tensor of losses between model predictions and targets.
-        """
-        loss, mcd_preds, preds, targets = self.model_step(
+        # ---------- first forward/backward (at w) ----------
+        loss1, mcd_preds1, preds1, targets1 = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_train
         )
 
-        # update and log metrics
-        self.train_loss(loss)
-        self.train_acc(preds, targets)
-        self.train_tu(mcd_preds, probs=False)
-        self.train_au(mcd_preds, probs=False)
-        self.train_eu(mcd_preds, probs=False)
+        opt.zero_grad(set_to_none=True)
+        self.manual_backward(loss1)
+
+        is_sam = hasattr(opt, "first_step") and hasattr(opt, "second_step")
+
+        if is_sam:
+            # ascent to w + e(w)
+            opt.first_step(zero_grad=True)
+
+            # ---------- second forward/backward (at w+e) ----------
+            loss2, _, _, _ = self.model_step(batch, mcd_samples=self.hparams.mcd_samples_train)
+            self.manual_backward(loss2)
+
+            # descent step, restore weights internally
+            opt.second_step(zero_grad=True)
+
+            # Choose what to log as "train/loss"
+            loss_to_log = loss2.detach()
+        else:
+            # Normal optimizer path
+            opt.step()
+            loss_to_log = loss1.detach()
+
+        # ---- metrics/logging (use first-pass predictions to avoid doubling metric compute) ----
+        self.train_loss(loss_to_log)
+        self.train_acc(preds1, targets1)
+        self.train_tu(mcd_preds1, probs=False)
+        self.train_au(mcd_preds1, probs=False)
+        self.train_eu(mcd_preds1, probs=False)
+
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/tu", self.train_tu, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/au", self.train_au, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/eu", self.train_eu, on_step=False, on_epoch=True, prog_bar=True)
 
-        # return loss or backpropagation will fail
-        return loss
+        # Lightning expects something returned; not used for stepping since we're manual
+        return loss_to_log
 
     def on_train_epoch_end(self) -> None:
-        "Lightning hook that is called when a training epoch ends."
-        pass
+        sch = self.lr_schedulers()
+        if sch is None:
+            return
+
+        # ReduceLROnPlateau needs a metric
+        if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            metric = self.trainer.callback_metrics.get("val/loss")
+            if metric is not None:
+                sch.step(metric)
+        else:
+            sch.step()
 
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
@@ -287,7 +318,14 @@ class ResnetMCDLitModule(LightningModule):
 
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
-        optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
+        base_opt = self.hparams.optimizer(params=self.trainer.model.parameters())
+        optimizer = SAM(
+            params=self.trainer.model.parameters(),
+            base_optimizer=type(base_opt),
+            rho=0.05,
+            adaptive=False,
+            **base_opt.defaults,
+        )
         if self.hparams.scheduler is not None:
             scheduler = self.hparams.scheduler(optimizer=optimizer)
             return {
@@ -303,4 +341,4 @@ class ResnetMCDLitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = ResnetMCDLitModule(None, None, None, None)
+    _ = ResnetSAMMCDLitModule(None, None, None, None)

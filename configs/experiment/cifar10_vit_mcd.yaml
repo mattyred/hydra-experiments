@@ -5,7 +5,7 @@
 
 defaults:
   - override /data: cifar10
-  - override /model: resnet_mcd
+  - override /model: vit_mcd
   - override /model/scheduler: cosine_annealing
   - override /callbacks: none
   - override /trainer: gpu
@@ -13,7 +13,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "wideresnet", "mcd", "cosine_annealing"]
+tags: ["cifar10", "vit_small", "mcd", "cosine_annealing"]
 
 seed: 1234
 
@@ -26,12 +26,13 @@ model:
   optimizer:
     lr: 0.002
   net_config:
-    arch: "wideresnet"
+    arch: "vit_small"
     dropout_rate: 0.0
     in_channels: 3
     num_classes: 10
-    wrn_depth: 40 # only for wideresnet
-    wrn_width: 4 # only for wideresnet
+    size: 32
+    patch: 4
+    dimhead: 512
   compile: false
   mcd_samples_train: 10
   mcd_samples_val: 50

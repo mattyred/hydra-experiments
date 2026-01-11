@@ -1,0 +1,21 @@
+_target_: src.models.vit_mcd_module.VitMCDLitModule
+
+net_config:
+  arch: vit_small
+  dropout_rate: 0
+  size: 32
+  patch: 4
+  dimhead: 512
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler: null
+
+compile: false
+# NOTE
+# Every 1st indent parameter MUST be a parameter of the class _target_ on top
+# If we need to pass an object as a parameter then we can instantiate it like `net` here

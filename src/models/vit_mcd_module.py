@@ -6,13 +6,7 @@ from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
 
-from src.models.components.resnet import (
-    ResNet18,
-    ResNet34,
-    ResNet50,
-    ResNet101,
-    ResNet152,
-)
+from src.models.components.vit import ViT
 from src.models.components.wideresnet import WideResNet
 from src.utils.uncertainty import (
     AleatoricUncertainty,
@@ -21,7 +15,7 @@ from src.utils.uncertainty import (
 )
 
 
-class ResnetMCDLitModule(LightningModule):
+class ViTMCDLitModule(LightningModule):
     """Example of a `LightningModule` for CIFAR10 classification.
 
     A `LightningModule` implements 8 key methods:
@@ -69,42 +63,20 @@ class ResnetMCDLitModule(LightningModule):
         self.dropout_rate = net_config["dropout_rate"]
         self.in_channels = net_config["in_channels"]
         self.num_classes = net_config["num_classes"]
-        if net_config["arch"] == "resnet18":
-            self.net = ResNet18(
-                in_channels=self.in_channels,
+        self.size = net_config["size"]
+        self.patch = net_config["patch"]
+        self.dimhead = net_config["dimhead"]
+        if net_config["arch"] == "vit_small":
+            self.net = ViT(
+                image_size=self.size,
+                patch_size=self.patch,
                 num_classes=self.num_classes,
-                dropout_rate=self.dropout_rate,
-            )
-        elif net_config["arch"] == "resnet34":
-            self.net = ResNet34(
-                in_channels=self.in_channels,
-                num_classes=self.num_classes,
-                dropout_rate=self.dropout_rate,
-            )
-        elif net_config["arch"] == "resnet50":
-            self.net = ResNet50(
-                in_channels=self.in_channels,
-                num_classes=self.num_classes,
-                dropout_rate=self.dropout_rate,
-            )
-        elif net_config["arch"] == "resnet101":
-            self.net = ResNet101(
-                in_channels=self.in_channels,
-                num_classes=self.num_classes,
-                dropout_rate=self.dropout_rate,
-            )
-        elif net_config["arch"] == "resnet152":
-            self.net = ResNet152(
-                in_channels=self.in_channels,
-                num_classes=self.num_classes,
-                dropout_rate=self.dropout_rate,
-            )
-        elif net_config["arch"] == "wideresnet":
-            self.net = WideResNet(
-                depth=net_config["wrn_depth"],
-                num_classes=self.num_classes,
-                widen_factor=net_config["wrn_width"],
-                dropRate=self.dropout_rate,
+                dim=int(self.dimhead),
+                depth=6,
+                heads=8,
+                mlp_dim=512,
+                dropout=self.dropout_rate,
+                emb_dropout=self.dropout_rate,
             )
         # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -303,4 +275,4 @@ class ResnetMCDLitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = ResnetMCDLitModule(None, None, None, None)
+    _ = ViTMCDLitModule(None, None, None, None)
