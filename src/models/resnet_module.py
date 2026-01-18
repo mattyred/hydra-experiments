@@ -141,7 +141,7 @@ class ResnetLitModule(LightningModule):
             y: [B]
         """
         x, y = batch
-        logits = self.forward(x)            # [B, C]
+        logits = self.forward(x)  # [B, C]
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
 

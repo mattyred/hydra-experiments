@@ -5,6 +5,7 @@
 from math import sqrt
 
 import torch
+
 torch.set_float32_matmul_precision("high")
 import torch.nn.functional as F
 from einops import rearrange, repeat

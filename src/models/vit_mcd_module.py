@@ -175,9 +175,9 @@ class ViTMCDLitModule(LightningModule):
         self.log("train/tu", self.train_tu, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/au", self.train_au, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/eu", self.train_eu, on_step=False, on_epoch=True, prog_bar=True)
-        
+
         # log learning rate
-        current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+        current_lr = self.trainer.optimizers[0].param_groups[0]["lr"]
         self.log("train/lr", current_lr, on_step=True, on_epoch=False)
 
         # return loss or backpropagation will fail
@@ -251,9 +251,8 @@ class ViTMCDLitModule(LightningModule):
         loss, mcd_preds, preds, targets = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_test
         )
-        logits = mcd_preds.transpose(0, 1) # [T, B, C] -> [B, T, C]
+        logits = mcd_preds.transpose(0, 1)  # [T, B, C] -> [B, T, C]
         return {"logits": logits.float().cpu().numpy(), "labels": targets.float().cpu().numpy()}
-
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

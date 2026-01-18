@@ -80,7 +80,8 @@ Note that `batch_size` must be divisible by the number of GPUs
 ```bash
 python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=12500,25000,37500,50000 trainer=ddp trainer.devices=4 data.batch_size=512 logger=wandb_csv
 ```
-### Train ViT with sweep (no SLURM) with hydra-joblib-launcher (like SLURM array) 
+
+### Train ViT with sweep (no SLURM) with hydra-joblib-launcher (like SLURM array)
 
 ```bash
 python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=12500,25000,37500,50000 logger=wandb_csv
@@ -89,6 +90,7 @@ python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=12500,25000,
 ### Evaluate a model trained with MCD:
 
 We pass the same configuration used during training
+
 ```bash
 python src/eval.py \
   --config-path "$(pwd)/logs/train/multiruns/2026-01-14_05-45-18/0/.hydra" \
@@ -99,11 +101,13 @@ python src/eval.py \
 ```
 
 ### Train and evaluate a deep ensemble of WideResNet models
+
 ```bash
 python src/train.py -m experiment=cifar10_resnet data.train_subset=12500,25000,37500,50000 seed='range(1234, 1244)' trainer=ddp trainer.devices=4 data.batch_size=512 logger=wandb_csv
 ```
 
 ### Train ViT of different sizes
+
 ```bash
 python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=50000 model.net_config.depth=6,12,24 model.net_config.heads=8,16,24  model.net_config.patch=16,32 trainer=ddp trainer.devices=4 logger=wandb_csv
 ```

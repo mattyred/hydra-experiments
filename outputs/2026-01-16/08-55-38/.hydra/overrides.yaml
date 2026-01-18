@@ -1,4 +1,0 @@
-- ckpt_path='/home/rossom/hydra-experiments/logs/train/multiruns/2026-01-14_05-45-18/0/csv/version_0/checkpoints/epoch=199-step=5000.ckpt'
-- trainer.devices=1
-- trainer.accelerator=gpu
-- logger=csv
