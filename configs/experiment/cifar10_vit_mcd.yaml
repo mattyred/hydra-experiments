@@ -13,7 +13,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "vit_small", "mcd", "cosine_annealing"]
+tags: ["cifar10", "vit_small", "mcd", "cosine_annealing", "scaling-P"]
 
 seed: 1234
 
@@ -23,14 +23,17 @@ trainer:
   gradient_clip_val: 0
 
 model:
-  optimizer:
-    lr: 0.002
+  scheduler:
+    T_max: 200
   net_config:
     arch: "vit_small"
-    dropout_rate: 0.0
+    dropout_rate: 0.5
     in_channels: 3
     num_classes: 10
     size: 32
+    depth: 6
+    heads: 8
+    mlp_dim: 512
     patch: 4
     dimhead: 512
   compile: false
@@ -39,7 +42,7 @@ model:
   mcd_samples_test: 50
 
 data:
-  batch_size: 64
+  batch_size: 512
   train_subset_seed: ${seed}
 
 logger:

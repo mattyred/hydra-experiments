@@ -1,0 +1,46 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - override /data: cifar10
+  - override /model: resnet
+  - override /model/scheduler: cosine_annealing
+  - override /callbacks: none
+  - override /trainer: gpu
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["cifar10", "wideresnet", "deterministic", "cosine_annealing"]
+
+seed: 1234
+
+trainer:
+  min_epochs: 200
+  max_epochs: 200
+  gradient_clip_val: 0
+
+model:
+  optimizer:
+    lr: 0.002
+  scheduler:
+    T_max: 200
+  net_config:
+    arch: "wideresnet"
+    dropout_rate: 0.0
+    in_channels: 3
+    num_classes: 10
+    wrn_depth: 28 # only for wideresnet
+    wrn_width: 10 # only for wideresnet
+  compile: false
+
+data:
+  batch_size: 64
+  train_subset_seed: ${seed}
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "cifar10_resnet"

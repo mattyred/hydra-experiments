@@ -55,20 +55,55 @@ Train model with chosen experiment configuration from [configs/experiment/](conf
 python src/train.py experiment=cifar10_resnet_mcd trainer.min_epochs=1 trainer.max_epochs=1 data.train_subset=1000 logger=wandb_csv
 ```
 
-Train a sweep of experiments SLURM configuration
+## Train a sweep of experiments SLURM configuration
 
 ```bash
 python src/train.py -m trainer.devices=4 experiment=cifar10_resnet_mcd_sweep logger=wandb_csv
 ```
 
-Train with SAM
+## Train ResNet with SAM
 
 ```bash
-python src/train.py experiment=cifar10_resnet_sam_mcd logger=csv
+python src/train.py -m experiment=cifar10_resnet_sam_mcd data.train_subset=12500,25000,37500,50000 model.net_config.arch=resnet18,resnet34,resnet50 trainer=ddp trainer.devices=4 logger=wandb_csv
 ```
 
-Train ViT
+## Train ViT
 
 ```bash
-python src/train.py experiment=vit_mcd logger=csv
+python src/train.py experiment=cifar10_vit_mcd logger=csv
+```
+
+### Train ViT with sweep (no SLURM) using DDP strategy with multi-GPUs
+
+Note that `batch_size` must be divisible by the number of GPUs
+
+```bash
+python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=12500,25000,37500,50000 trainer=ddp trainer.devices=4 data.batch_size=512 logger=wandb_csv
+```
+### Train ViT with sweep (no SLURM) with hydra-joblib-launcher (like SLURM array) 
+
+```bash
+python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=12500,25000,37500,50000 logger=wandb_csv
+```
+
+### Evaluate a model trained with MCD:
+
+We pass the same configuration used during training
+```bash
+python src/eval.py \
+  --config-path "$(pwd)/logs/train/multiruns/2026-01-14_05-45-18/0/.hydra" \
+  --config-name config.yaml \
+  ckpt_path="'$(pwd)/logs/train/multiruns/2026-01-14_05-45-18/0/csv/version_0/checkpoints/epoch=199-step=5000.ckpt'" \
+  trainer.devices=1 \
+  trainer.accelerator=gpu
+```
+
+### Train and evaluate a deep ensemble of WideResNet models
+```bash
+python src/train.py -m experiment=cifar10_resnet data.train_subset=12500,25000,37500,50000 seed='range(1234, 1244)' trainer=ddp trainer.devices=4 data.batch_size=512 logger=wandb_csv
+```
+
+### Train ViT of different sizes
+```bash
+python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=50000 model.net_config.depth=6,12,24 model.net_config.heads=8,16,24  model.net_config.patch=16,32 trainer=ddp trainer.devices=4 logger=wandb_csv
 ```

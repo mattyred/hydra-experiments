@@ -25,9 +25,11 @@ trainer:
 model:
   optimizer:
     lr: 0.002
+  scheduler:
+    T_max: 200
   net_config:
     arch: "resnet18"
-    dropout_rate: 0.0
+    dropout_rate: 0.5
     in_channels: 3
     num_classes: 10
   compile: false

@@ -1,0 +1,162 @@
+_wandb:
+    value:
+        cli_version: 0.23.1
+        e:
+            t82lz673w5ef2ibbhyrxy3kwp7gklxeu:
+                args:
+                    - --config-path
+                    - /home/rossom/hydra-experiments/logs/train/multiruns/2026-01-14_05-45-18/0/.hydra
+                    - --config-name
+                    - config.yaml
+                    - ckpt_path='/home/rossom/hydra-experiments/logs/train/multiruns/2026-01-14_05-45-18/0/csv/version_0/checkpoints/epoch=199-step=5000.ckpt'
+                    - trainer.devices=1
+                    - trainer.accelerator=gpu
+                codePath: src/eval.py
+                codePathLocal: src/eval.py
+                cpu_count: 24
+                cpu_count_logical: 48
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "2113513742336"
+                        used: "37730439168"
+                email: mattia.rosso@kaust.edu.sa
+                executable: /home/rossom/miniconda3/envs/scalinglaws/bin/python
+                git:
+                    commit: a9be582f0cc9dc617ec10c62c4905cc919e1bd9c
+                    remote: git@github.com:mattyred/hydra-experiments.git
+                gpu: NVIDIA A100-SXM4-40GB
+                gpu_count: 4
+                gpu_nvidia:
+                    - architecture: Ampere
+                      cudaCores: 6912
+                      memoryTotal: "42949672960"
+                      name: NVIDIA A100-SXM4-40GB
+                      uuid: GPU-e41cd885-39cd-1496-9d88-408094f92bb3
+                    - architecture: Ampere
+                      cudaCores: 6912
+                      memoryTotal: "42949672960"
+                      name: NVIDIA A100-SXM4-40GB
+                      uuid: GPU-5414ce0e-3d26-3876-2600-3707ff1c6334
+                    - architecture: Ampere
+                      cudaCores: 6912
+                      memoryTotal: "42949672960"
+                      name: NVIDIA A100-SXM4-40GB
+                      uuid: GPU-9df16b1f-17b6-04f6-7a8c-e2e3dbdbeb0e
+                    - architecture: Ampere
+                      cudaCores: 6912
+                      memoryTotal: "42949672960"
+                      name: NVIDIA A100-SXM4-40GB
+                      uuid: GPU-03e7ee96-c9da-a3dd-c901-dc1b6bc169c9
+                host: scaling-laws
+                memory:
+                    total: "359039377408"
+                os: Linux-6.12.63+deb13-cloud-amd64-x86_64-with-glibc2.41
+                program: /home/rossom/hydra-experiments/src/eval.py
+                python: CPython 3.9.25
+                root: /home/rossom/hydra-experiments/outputs/2026-01-16/09-01-13
+                startedAt: "2026-01-16T09:01:18.087507Z"
+                writerId: t82lz673w5ef2ibbhyrxy3kwp7gklxeu
+        m:
+            - "1": trainer/global_step
+              "6":
+                - 3
+              "7": []
+            - "2": '*'
+              "5": 1
+              "6":
+                - 1
+              "7": []
+        python_version: 3.9.25
+        t:
+            "1":
+                - 1
+                - 41
+                - 50
+                - 106
+            "2":
+                - 1
+                - 41
+                - 50
+                - 106
+            "3":
+                - 2
+                - 7
+                - 15
+                - 66
+            "4": 3.9.25
+            "5": 0.23.1
+            "12": 0.23.1
+            "13": linux-x86_64
+ckpt_path:
+    value: /home/rossom/hydra-experiments/logs/train/multiruns/2026-01-14_05-45-18/0/csv/version_0/checkpoints/epoch=199-step=5000.ckpt
+data:
+    value:
+        _target_: src.data.cifar10_datamodule.CIFAR10DataModule
+        batch_size: 512
+        data_dir: ${paths.data_dir}
+        num_workers: 4
+        pin_memory: true
+        train_subset: 12500
+        train_subset_seed: ${seed}
+extras:
+    value:
+        enforce_tags: true
+        ignore_warnings: false
+        print_config: true
+model:
+    value:
+        _target_: src.models.vit_mcd_module.ViTMCDLitModule
+        compile: false
+        mcd_samples_test: 50
+        mcd_samples_train: 10
+        mcd_samples_val: 50
+        net_config:
+            arch: vit_small
+            dimhead: 512
+            dropout_rate: 0.5
+            in_channels: 3
+            num_classes: 10
+            patch: 4
+            size: 32
+        optimizer:
+            _partial_: true
+            _target_: torch.optim.Adam
+            lr: 0.0001
+            weight_decay: 0
+        scheduler:
+            _partial_: true
+            _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+            T_max: 200
+            eta_min: 0
+model/params/non_trainable:
+    value: 0
+model/params/total:
+    value: 9622512
+model/params/trainable:
+    value: 9622512
+seed:
+    value: 1234
+tags:
+    value:
+        - cifar10
+        - vit_small
+        - mcd
+        - cosine_annealing
+task_name:
+    value: train
+trainer:
+    value:
+        _target_: lightning.pytorch.trainer.Trainer
+        accelerator: gpu
+        check_val_every_n_epoch: 1
+        default_root_dir: ${paths.output_dir}
+        deterministic: false
+        devices: 1
+        gradient_clip_val: 0
+        max_epochs: 200
+        min_epochs: 200
+        num_nodes: 1
+        precision: bf16-mixed
+        strategy: ddp
+        sync_batchnorm: true

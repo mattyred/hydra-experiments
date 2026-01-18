@@ -5,6 +5,7 @@ import rootutils
 from lightning import LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig
+import numpy as np
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -72,11 +73,16 @@ def evaluate(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log_hyperparameters(object_dict)
 
     log.info("Starting testing!")
-    trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path)
+    #trainer.test(model=model, datamodule=datamodule, ckpt_path=cfg.ckpt_path, weights_only=False)
 
     # for predictions use trainer.predict(...)
-    # predictions = trainer.predict(model=model, dataloaders=dataloaders, ckpt_path=cfg.ckpt_path)
-
+    datamodule.prepare_data()
+    datamodule.setup(stage="test")
+    predictions = trainer.predict(model=model, dataloaders=datamodule.test_dataloader(), ckpt_path=cfg.ckpt_path, weights_only=False)
+    all_logits = np.concatenate([pred["logits"] for pred in predictions], axis=0)
+    all_labels = np.concatenate([pred["labels"] for pred in predictions], axis=0)
+    np.savez(cfg.paths.output_dir + "/predictions.npz", logits=all_logits, labels=all_labels)
+    
     metric_dict = trainer.callback_metrics
 
     return metric_dict, object_dict

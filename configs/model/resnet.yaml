@@ -1,0 +1,15 @@
+_target_: src.models.resnet_module.ResnetLitModule
+
+net_config:
+  arch: resnet18
+  dropout_rate: 0
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler: null
+
+compile: false
