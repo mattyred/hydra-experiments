@@ -155,4 +155,4 @@ configs/local/default.yaml
 
 srun.sh
 jupyter.sh
-dcgm/
+dcgm/Miniconda3-latest-Linux-x86_64.sh
