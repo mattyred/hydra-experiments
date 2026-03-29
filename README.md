@@ -52,7 +52,7 @@ conda activate myenv
 Train model with chosen experiment configuration from [configs/experiment/](configs/experiment/)
 
 ```bash
-python src/train.py experiment=cifar10_resnet_mcd trainer.min_epochs=1 trainer.max_epochs=1 data.train_subset=1000 logger=wandb_csv
+python src/train.py -m experiment=cifar10_resnet_mcd data.train_subset=12500,25000,37500,50000 logger=wandb_csv
 ```
 
 ## Train a sweep of experiments SLURM configuration

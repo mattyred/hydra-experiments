@@ -13,7 +13,7 @@ defaults:
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "wideresnet", "mcd", "cosine_annealing"]
+tags: ["cifar10", "wideresnet", "mcd", "cosine_annealing", "ece+brier"]
 
 seed: 1234
 
@@ -27,11 +27,11 @@ model:
     lr: 0.002
   net_config:
     arch: "wideresnet"
-    dropout_rate: 0.0
+    dropout_rate: 0.5
     in_channels: 3
     num_classes: 10
-    wrn_depth: 40 # only for wideresnet
-    wrn_width: 4 # only for wideresnet
+    wrn_depth: 28 # only for wideresnet
+    wrn_width: 10 # only for wideresnet
   compile: false
   mcd_samples_train: 10
   mcd_samples_val: 50

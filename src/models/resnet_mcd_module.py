@@ -5,6 +5,7 @@ import torch
 from lightning import LightningModule
 from torchmetrics import MaxMetric, MeanMetric
 from torchmetrics.classification.accuracy import Accuracy
+from torchmetrics.classification import MulticlassCalibrationError
 
 from src.models.components.resnet import (
     ResNet18,
@@ -131,6 +132,10 @@ class ResnetMCDLitModule(LightningModule):
         # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
 
+        # calibration metrics for test set
+        self.test_ece = MulticlassCalibrationError(num_classes=self.num_classes, n_bins=15, norm='l1')
+        self.test_brier = MeanMetric()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
@@ -169,11 +174,12 @@ class ResnetMCDLitModule(LightningModule):
 
         mcd_preds = torch.stack(mcd_preds)  # [T, B, C] to compute uncertainties
         mean_preds = mcd_preds.mean(dim=0)  # [B, C] to compute accuracy
+        mean_probs = torch.softmax(mean_preds, dim=1)  # [B, C] probabilities
 
         loss = self.criterion(mean_preds, y)
         preds = torch.argmax(mean_preds, dim=1)
 
-        return loss, mcd_preds, preds, y
+        return loss, mcd_preds, mean_probs, preds, y
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -185,7 +191,7 @@ class ResnetMCDLitModule(LightningModule):
         :param batch_idx: The index of the current batch.
         :return: A tensor of losses between model predictions and targets.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
+        loss, mcd_preds, mean_probs, preds, targets = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_train
         )
 
@@ -215,7 +221,7 @@ class ResnetMCDLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
+        loss, mcd_preds, mean_probs, preds, targets = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_val
         )
 
@@ -246,9 +252,13 @@ class ResnetMCDLitModule(LightningModule):
             labels.
         :param batch_idx: The index of the current batch.
         """
-        loss, mcd_preds, preds, targets = self.model_step(
+        loss, mcd_preds, mean_probs, preds, targets = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_test
         )
+
+        # brier score: mean over samples of sum_c (p_c - y_c)^2
+        targets_onehot = torch.nn.functional.one_hot(targets, num_classes=self.num_classes).float()
+        brier = ((mean_probs - targets_onehot) ** 2).sum(dim=1).mean()
 
         # update and log metrics
         self.test_loss(loss)
@@ -256,16 +266,20 @@ class ResnetMCDLitModule(LightningModule):
         self.test_tu(mcd_preds, probs=False)
         self.test_au(mcd_preds, probs=False)
         self.test_eu(mcd_preds, probs=False)
+        self.test_ece(mean_probs, targets)
+        self.test_brier(brier)
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/tu", self.test_tu, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/au", self.test_au, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/eu", self.test_eu, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/ece", self.test_ece, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/brier", self.test_brier, on_step=False, on_epoch=True, prog_bar=True)
 
     def predict_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> Dict[str, Any]:
-        loss, mcd_preds, preds, targets = self.model_step(
+        loss, mcd_preds, mean_probs, preds, targets = self.model_step(
             batch, mcd_samples=self.hparams.mcd_samples_test
         )
         logits = mcd_preds.transpose(0, 1)  # [T, B, C] -> [B, T, C]

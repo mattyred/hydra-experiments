@@ -29,7 +29,7 @@ model:
     T_max: 200
   net_config:
     arch: "wideresnet"
-    dropout_rate: 0.0
+    dropout_rate: 0
     in_channels: 3
     num_classes: 10
     wrn_depth: 28 # only for wideresnet
