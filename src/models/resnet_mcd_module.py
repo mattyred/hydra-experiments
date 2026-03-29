@@ -262,6 +262,15 @@ class ResnetMCDLitModule(LightningModule):
         self.log("test/au", self.test_au, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/eu", self.test_eu, on_step=False, on_epoch=True, prog_bar=True)
 
+    def predict_step(
+        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+    ) -> Dict[str, Any]:
+        loss, mcd_preds, preds, targets = self.model_step(
+            batch, mcd_samples=self.hparams.mcd_samples_test
+        )
+        logits = mcd_preds.transpose(0, 1)  # [T, B, C] -> [B, T, C]
+        return {"logits": logits.float().cpu().numpy(), "labels": targets.float().cpu().numpy()}
+    
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
         pass

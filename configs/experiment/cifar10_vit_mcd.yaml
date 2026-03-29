@@ -6,25 +6,25 @@
 defaults:
   - override /data: cifar10
   - override /model: vit_mcd
-  - override /model/scheduler: cosine_annealing
+  - override /model/scheduler: null
   - override /callbacks: none
   - override /trainer: gpu
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
 
-tags: ["cifar10", "vit_small", "mcd", "cosine_annealing", "scaling-P"]
+tags: ["cifar10", "vit_small", "mcd", "cosine_annealing", "long_train"]
 
 seed: 1234
 
 trainer:
-  min_epochs: 200
-  max_epochs: 200
+  min_epochs: 1000
+  max_epochs: 1000
   gradient_clip_val: 0
 
 model:
-  scheduler:
-    T_max: 200
+  optimizer:
+    lr: 1e-4
   net_config:
     arch: "vit_small"
     dropout_rate: 0.5
@@ -48,4 +48,4 @@ data:
 logger:
   wandb:
     tags: ${tags}
-    group: "cifar10_resnet"
+    group: "cifar10_vit"

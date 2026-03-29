@@ -109,5 +109,9 @@ python src/train.py -m experiment=cifar10_resnet data.train_subset=12500,25000,3
 ### Train ViT of different sizes
 
 ```bash
-python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=50000 model.net_config.depth=6,12,24 model.net_config.heads=8,16,24  model.net_config.patch=16,32 trainer=ddp trainer.devices=4 logger=wandb_csv
+python src/train.py -m experiment=cifar10_vit_mcd data.train_subset=50000 model.net_config.depth=6,12 model.net_config.heads=8,16,24  model.net_config.patch=8 trainer=ddp trainer.devices=4 logger=wandb_csv
 ```
+
+### Evaluate ResNet+MCD on CIFAR-10-C
+
+See notebook `notebooks/cifar-10-c.ipynb`
